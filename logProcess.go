@@ -4,41 +4,92 @@ import (
 	"strings"
 	"fmt"
 	"time"
+	"os"
+	"bufio"
+	"io"
 )
 
-type LogProcess  struct{
-	rc chan string
-	wc chan string
-	path string // file path
-	influxDBDsn string // influx data source
+type Reader interface {
+	Read(rc chan []byte)
+}
+type Writer interface {
+	Write(wc chan string)
 }
 
-func (l *LogProcess) ReadFromFile() {
-	//Read model
-	line:="message"
-	l.rc<-line
+
+type LogProcess  struct{
+	rc chan []byte
+	wc chan string
+	read Reader
+	write Writer
+}
+
+type ReadFromFile struct {
+	path string //read file path
+}
+
+
+func (r *ReadFromFile) Read(rc chan []byte)	{
+	//read model
+	//open file
+	f,err:=os.Open(r.path)
+	if err!=nil{
+		panic(fmt.Sprintf("open file error:%s",err.Error()))
+	}
+
+	//read from end of the file line by line
+	f.Seek(0,2)
+	rd:=bufio.NewReader(f)
+	for  {
+		line, err := rd.ReadBytes('\n')
+		if err == io.EOF {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		} else if err != nil {
+			panic(fmt.Sprintf("ReadBytes error:%s", err.Error()))
+		}
+
+		rc <- line[:len(line)-1]
+	}
+}
+
+type WriteToInfluxDB struct {
+	influxDBDsn string //influx data source
+}
+func (w *WriteToInfluxDB) Write(wc chan string)	{
+	//write model
+	for v:=range wc  {
+		fmt.Println(v)
+	}
 }
 
 func (l *LogProcess) Process() {
+
 	//Analysis model
-	data:=<-l.rc
-	l.wc<- strings.ToUpper(data)
+	for v:=range l.rc{
+		l.wc <-strings.ToUpper(string(v))
+	}
 }
 
-func (l *LogProcess) WriteToInfluxDB(){
-    // write model
-    fmt.Println(<-l.wc)
-}
+
 
 func main() {
-	lp:=&LogProcess{
-		rc:make(chan string),
-		wc:make(chan string),
-		path:"/tmp/access.log",
+	r:=&ReadFromFile{
+		path:"./access.log",
+	}
+
+	w:=&WriteToInfluxDB{
 		influxDBDsn:"username&password..",
 	}
-	go lp.ReadFromFile()
+
+	lp:=&LogProcess{
+		rc:make(chan []byte),
+		wc:make(chan string),
+		read:r,
+		write:w,
+	}
+	go lp.read.Read(lp.rc)
 	go lp.Process()
-	go lp.WriteToInfluxDB()
+	go lp.write.Write(lp.wc)
 	time.Sleep(2*time.Second)
 }
