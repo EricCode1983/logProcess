@@ -1,0 +1,6 @@
+----Show all the hidden files
+defaults write com.apple.finder AppleShowAllFiles -bool true;
+KillAll Finder
+
+-- Git use 
+https://www.jianshu.com/p/7edb6b838a2e
